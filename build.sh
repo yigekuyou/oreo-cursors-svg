@@ -5,63 +5,33 @@
 # Copyright (c) 2020 Sergei Eremenko <https://github.com/SmartFinn>
 
 set -e
-
-DBUS_SESSION_BUS_ADDRESS=""
-INKSCAPE_VERSION=$(inkscape --version 2>/dev/null | awk '/Inkscape[ ]/ {print $2; exit}')
-
-convert_to_png() {
+ruby generator/convert.rb
+convert_to_local(){
 	local src_dir="$1"
-	local out_dir="${2:-.}"
-	local file size bitmap_file png_mtime svg_mtime
+	local out_dir="$2"
+	local svg=$(ls $JSON)
+	mkdir -p $out_dir
+	for i in  $svg ;do
+	mkdir -p $src_dir/$i
+	cp $JSON/$i $src_dir/$i/metadata.json
+	if [ -f $src_dir/$i.svg ];then
+	mv $src_dir/$i.svg $src_dir/$i
+	else
+	for file in $src_dir/$i-*.svg; do
+	mv $file $src_dir/$i
+	done
+	fi
+	done
 
-	[ -d "$src_dir" ] || return 1
-	[ -d "$out_dir" ] || mkdir -p "$out_dir"
 
-	# shellcheck disable=SC2016
-	for file in "$src_dir"/*.svg; do
-		[ -f "$file" ] || continue
-		for size in 32 64; do
-			bitmap_file="${out_dir%/}/$(basename "$file" .svg)_${size}.png"
-
-			svg_mtime="$(stat -c '%Y' "$file")"
-			png_mtime="$(stat -c '%Y' "$bitmap_file" 2>/dev/null || echo 0)"
-
-			if (( png_mtime > svg_mtime )); then
-				# skip if PNG file exists and the modification time is
-				# newer than on SVG file
-				continue
-			fi
-
-			if [ "${INKSCAPE_VERSION%%.*}" -eq 0 ]; then
-				printf 'inkscape -z -e "%s" -w %s -h %s "%s"\0' \
-					"$bitmap_file" "$size" "$size" "$file"
-			else
-				printf 'inkscape -o "%s" -w %s -h %s "%s"\0' \
-					"$bitmap_file" "$size" "$size" "$file"
-			fi
-		done
-	done | xargs -r -0 -n 1 -P "$(nproc)" sh -c
+	mv $src_dir/index.theme $out_dir/
+	mv $src_dir $out_dir/cursors_scalable
 }
-
 convert_to_x11cursor() {
 	local src_dir="$1"
 	local out_dir="$2"
-	local config base_name
-
-	[ -d "$src_dir" ] || return 1
-
-	if [ -d "$out_dir" ]; then
-		rm -rf "$out_dir"
-	fi
-
-	mkdir -p "$out_dir"
-
 	echo -ne "Generating cursor theme...\\r"
-	for config in "$CONFIG_DIR"/*.cursor; do
-		[ -f "$config" ] || continue
-		base_name="$(basename "$config" .cursor)"
-		xcursorgen -p "$src_dir" "$config" "$out_dir/$base_name"
-	done
+	kcursorgen --svg-theme-to-xcursor --svg-dir=$src_dir/cursors_scalable --xcursor-dir=$out_dir --sizes=16 --scales=1
 	echo -e "Generating cursor theme... DONE"
 }
 
@@ -91,13 +61,13 @@ for theme_src_dir in "$SRC_DIR"/*; do
 	theme_name="$(basename "$theme_src_dir")"
 	theme_build_dir="$BUILD_DIR/$theme_name"
 	theme_out_dir="$OUT_DIR/$theme_name"
-
+	JSON="$SCRIPT_DIR/generator/oreo_base_metadata/"
 	echo "=> Workon '$theme_src_dir' ..."
-	convert_to_png "$theme_src_dir" "$theme_build_dir"
-	convert_to_x11cursor "$theme_build_dir" "$theme_out_dir"/cursors
-	create_aliases "$theme_out_dir"/cursors
+	convert_to_local "$theme_src_dir" "$theme_build_dir"
+	convert_to_x11cursor "$theme_build_dir" "$theme_build_dir"/cursors
+	create_aliases "$theme_build_dir"/cursors
+	create_aliases "$theme_build_dir"/cursors_scalable
 
-	cp -f "$theme_src_dir/index.theme" "$theme_out_dir"/
-	cp -f cursor.theme "$theme_out_dir"/
-	sed -i 's/oreo_base_cursors/'$theme_name'/g' dist/$theme_name/cursor.theme
+	cp -f cursor.theme "$theme_build_dir"/
+	sed -i 's/oreo_base_cursors/'$theme_name'/g' $theme_build_dir/cursor.theme
 done
