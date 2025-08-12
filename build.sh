@@ -70,4 +70,5 @@ for theme_src_dir in "$SRC_DIR"/*; do
 
 	cp -f cursor.theme "$theme_build_dir"/
 	sed -i 's/oreo_base_cursors/'$theme_name'/g' $theme_build_dir/cursor.theme
+	mv $BUILD_DIR $OUT_DIR
 done
